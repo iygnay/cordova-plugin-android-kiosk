@@ -1,25 +1,21 @@
 {
-  "name": "cordova-plugin-android-kiosk",
-  "version": "0.0.4",
-  "description": "setup single-use (COSU) devices for android",
+  "name": "cordova-plugin-android-kiosk-2",
+  "version": "1.0.0",
+  "author": {
+    "name": "zqc"
+  },
   "cordova": {
-    "id": "cordova-plugin-android-kiosk",
+    "id": "cordova-plugin-android-kiosk-2",
     "platforms": [
       "android"
     ]
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/shougao/cordova-plugin-android-kiosk.git"
-  },
+  "deprecated": false,
+  "description": "setup single-use (COSU) devices for android",
+  "homepage": "https://github.com/shougao/cordova-plugin-android-kiosk#readme",
   "keywords": [
     "ecosystem:cordova",
     "cordova-android"
   ],
-  "author": "zqc",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/shougao/cordova-plugin-android-kiosk/issues"
-  },
-  "homepage": "https://github.com/shougao/cordova-plugin-android-kiosk#readme"
+  "license": "ISC"
 }

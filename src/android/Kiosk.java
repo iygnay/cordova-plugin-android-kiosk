@@ -4,169 +4,199 @@ import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioManager;
-import android.os.Handler;
-import android.os.Message;
-import android.util.Log;
-import android.view.KeyEvent;
+import android.os.Build;
+import android.support.annotation.RequiresApi;
 import android.view.View;
-import android.widget.Toast;
 
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
-import org.apache.cordova.PluginResult;
 import org.apache.cordova.CallbackContext;
 
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
 
 
 public class Kiosk extends CordovaPlugin {
 
-    private DevicePolicyManager mDpm;
-    private boolean mIsKioskEnabled;
-    private CallbackContext mCallbackContext;
+    private static int LOCKED_SYSTEM_UI_FLAGS = (0
+//        | View.SYSTEM_UI_LAYOUT_FLAGS
+        | View.SYSTEM_UI_FLAG_LOW_PROFILE
+        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        | View.SYSTEM_UI_FLAG_FULLSCREEN
+        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    );
 
+    /**
+     * 执行, 这里是 cordova 插件的执行入口
+     */
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-        mCallbackContext = callbackContext;
-        if (action.equals("lockLauncher")) {
-            Boolean locked = args.getBoolean(0);
-            lockLauncher(locked);
-            return true;
-        } else if (action.equals("isLocked")) {
-            callbackContext.success(String.valueOf(mIsKioskEnabled));
-            return true;
-        } else if (action.equals("switchLauncher")) {
-            switchLauncher(callbackContext);
-            return true;
-        } else if (action.equals("deleteDeviceAdmin")) {
-            deleteDeviceAdmin();
+        switch (action) {
+            case "lockLauncher": {
+                boolean locked = args.getBoolean(0);
+                lockLauncher(locked, callbackContext);
+                return true;
+            }
+            case "isLocked": {
+                callbackContext.error("isLocked not implemented");
+                return true;
+            }
+            case "switchLauncher": {
+                switchLauncher(callbackContext);
+                return true;
+            }
+            case "deleteDeviceAdmin": {
+                deleteDeviceAdmin(callbackContext);
+                return true;
+            }
+            case "isKeepScreenOn": {
+                isKeepScreenOn(callbackContext);
+                return true;
+            }
+            default: {
+                return false;
+            }
         }
-        return false;
-    }
-
-    @Override
-    public void onResume(boolean multitasking) {
-        super.onResume(multitasking);
-//        hideSystemUI();
     }
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
-        lockLauncher(true);
-        enterFullscreen();
-    }
-
-    private void enterFullscreen() {
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
-//                hideSystemUI();
+                View decorView = cordova.getActivity().getWindow().getDecorView();
+                decorView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+                    @Override
+                    public void onSystemUiVisibilityChange(int visibility) {
+                        decorView.setSystemUiVisibility(LOCKED_SYSTEM_UI_FLAGS);
+                    }
+                });
             }
         });
     }
 
-    private void hideSystemUI() {
-        View mDecorView = cordova.getActivity().getWindow().getDecorView();
-        // Set the IMMERSIVE flag.
-        // Set the content to appear under the system bars so that the content
-        // doesn't resize when the system bars hide and show.
-        mDecorView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION // hide nav bar
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN // hide status bar
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-
-        mDecorView.setOnSystemUiVisibilityChangeListener(new View.OnSystemUiVisibilityChangeListener() {
+    /**
+     * API: 获取屏幕常亮状态
+     * @param callbackContext
+     */
+    private void isKeepScreenOn(CallbackContext callbackContext) {
+        cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
-            public void onSystemUiVisibilityChange(int visibility) {
-                cordova.getActivity().getWindow().getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION // hide nav bar
-                                | View.SYSTEM_UI_FLAG_FULLSCREEN // hide status bar
-                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            public void run() {
+                try {
+                    boolean b = webView.getView().getKeepScreenOn();
+                    callbackContext.success(b ? "true" : "false");
+                } catch (Exception e) {
+                    callbackContext.error(e.getMessage());
+                }
             }
         });
     }
 
+    /**
+     * API: 切换 Launcher
+     * @param callbackContext
+     */
     private void switchLauncher(CallbackContext callbackContext) {
-        if (mIsKioskEnabled) {
-            lockLauncher(false);
-        }
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.addCategory(Intent.CATEGORY_HOME);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-
-        Intent chooser = Intent.createChooser(intent, "Select destination...");
-        if (intent.resolveActivity(cordova.getActivity().getPackageManager()) != null) {
-            cordova.getActivity().startActivity(chooser);
-        }
-        callbackContext.success();
-    }
-
-    private void lockLauncher(boolean locked) {
-        if (locked && !mIsKioskEnabled) {
-            mDpm = (DevicePolicyManager) cordova.getActivity().getSystemService(Context.DEVICE_POLICY_SERVICE);
-            ComponentName deviceAdmin = new ComponentName(cordova.getActivity(), MyAdmin.class);
-            if (!mDpm.isAdminActive(deviceAdmin)) {
-                callbackMessage(false, "not admin active");
-            }
-            if (mDpm.isDeviceOwnerApp(cordova.getActivity().getPackageName())) {
-                mDpm.setLockTaskPackages(deviceAdmin, new String[]{cordova.getActivity().getPackageName()});
-            } else {
-                callbackMessage(false, "not device owner app");
-            }
-            enableKioskMode(true);
-        } else if (!locked) {
-            enableKioskMode(false);
-        }
-    }
-
-    private void enableKioskMode(boolean enabled) {
         try {
-            if (enabled) {
-                if (mDpm.isLockTaskPermitted(cordova.getActivity().getPackageName())) {
-                    cordova.getActivity().startLockTask();
-                    mIsKioskEnabled = true;
-                } else {
-                    callbackMessage(false, "no permission to lock");
-                }
+            Intent intent = new Intent(Intent.ACTION_MAIN);
+            intent.addCategory(Intent.CATEGORY_HOME);
+            intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+            Intent chooser = Intent.createChooser(intent, "Select destination...");
+            if (intent.resolveActivity(cordova.getActivity().getPackageManager()) != null) {
+                cordova.getActivity().startActivity(chooser);
+                callbackContext.success("success");
             } else {
-                cordova.getActivity().stopLockTask();
-                mIsKioskEnabled = false;
+                // 这里不知道是什么意思.
+                callbackContext.error("packageManager cannot resolved");
             }
         } catch (Exception e) {
-            callbackMessage(false, "android lock task exception");
-            e.printStackTrace();
+            callbackContext.error(e.getMessage());
         }
     }
 
-    private void deleteDeviceAdmin() {
-        mDpm.clearDeviceOwnerApp(cordova.getActivity().getPackageName());
+    /**
+     * API: 删除设备管理权限
+     * @param callbackContext
+     */
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void deleteDeviceAdmin(CallbackContext callbackContext) {
+        try {
+            DevicePolicyManager dpm = (DevicePolicyManager)cordova.getActivity().getSystemService(Context.DEVICE_POLICY_SERVICE);
+            String packageName = cordova.getActivity().getPackageName();
+            if (dpm.isDeviceOwnerApp(packageName)) {
+                dpm.clearDeviceOwnerApp(packageName);
+                callbackContext.success("success");
+            } else {
+                callbackContext.error("当前应用不是设备管理者");
+            }
+        } catch (Exception e) {
+            callbackContext.error(e.getMessage());
+        }
     }
 
+    /**
+     * API: 锁定 Launcher
+     * @param locked
+     * @param callbackContext
+     */
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void lockLauncher(boolean locked, CallbackContext callbackContext) {
+        try {
+            if (locked) {
+                // 1. 保持屏幕常亮
+                // note(杨逸): 此操作无需管理权限
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.getView().setKeepScreenOn(true);
+                    }
+                });
 
-    private void callbackMessage(boolean success, String message) {
-        if (mCallbackContext == null) {
-            return;
+                // 2. 执行需要管理权限的操作
+                DevicePolicyManager dpm = (DevicePolicyManager)cordova.getActivity().getSystemService(Context.DEVICE_POLICY_SERVICE);
+                String packageName = cordova.getActivity().getPackageName();
+                if (!dpm.isDeviceOwnerApp(packageName)) {
+                    callbackContext.error("设备管理权限未配置, 请先使用 adb 赋予应用设备管理权限");
+                    return;
+                }
+
+                ComponentName deviceAdmin = new ComponentName(cordova.getActivity(), MyAdmin.class);
+                if (!dpm.isAdminActive(deviceAdmin)) {
+                    callbackContext.error("设备管理权限未激活, 请在系统设置中激活应用的设备管理权限");
+                    return;
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // 禁用锁屏模式
+                    dpm.setKeyguardDisabled(deviceAdmin, true);
+                }
+
+                // 将当前应用设置为锁定状态.
+                dpm.setLockTaskPackages(deviceAdmin, new String[]{ packageName });
+//                dpm.setStatusBarDisabled(deviceAdmin, true);
+                cordova.getActivity().startLockTask();
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        View decorView = cordova.getActivity().getWindow().getDecorView();
+                        decorView.setSystemUiVisibility(LOCKED_SYSTEM_UI_FLAGS);
+                    }
+                });
+            } else {
+                // 解锁
+                cordova.getActivity().stopLockTask();
+            }
+
+            callbackContext.success("success");
+        } catch (Exception e) {
+            callbackContext.error(e.getMessage());
         }
-        if (success) {
-            PluginResult dataResult = new PluginResult(PluginResult.Status.OK, message);
-            dataResult.setKeepCallback(true);
-            mCallbackContext.sendPluginResult(dataResult);
-        } else {
-            PluginResult dataResult = new PluginResult(PluginResult.Status.ERROR, message);
-            dataResult.setKeepCallback(true);
-            mCallbackContext.sendPluginResult(dataResult);
-        }
-        mCallbackContext = null;
     }
 }
